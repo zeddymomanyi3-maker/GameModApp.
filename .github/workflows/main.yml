@@ -16,10 +16,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Generate Complete Android Project & Build
+      - name: Generate Complete Android Project
         run: |
           mkdir -p app/src/main/java/com/example/gamemod/model
           mkdir -p app/src/main/java/com/example/gamemod/adapter
@@ -262,11 +259,14 @@ jobs:
           }
           EOF
 
-          # 11. Run Gradle Build
-          gradle assembleDebug
+      - name: Setup Matching Gradle 8.5 & Build APK
+        run: |
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+  
