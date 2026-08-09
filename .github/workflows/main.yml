@@ -19,23 +19,36 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Auto-Setup and Build Debug APK
+      - name: Auto-Detect, Restructure, and Build
         run: |
-          # Find where the 'app' directory is located
-          APP_DIR=$(find . -maxdepth 4 -type d -name "app" | head -n 1)
-          if [ -z "$APP_DIR" ]; then
-            echo "Error: Could not find 'app' folder."
+          # 1. Locate AndroidManifest.xml
+          MANIFEST_FILE=$(find . -name "AndroidManifest.xml" | head -n 1)
+
+          if [ -z "$MANIFEST_FILE" ]; then
+            echo "Error: No AndroidManifest.xml found in repository."
+            echo "Directory contents:"
+            find . -maxdepth 3
             exit 1
           fi
-          
-          ROOT_DIR=$(dirname "$APP_DIR")
-          echo "Building inside root: $ROOT_DIR"
+
+          echo "Found AndroidManifest.xml at: $MANIFEST_FILE"
+          MODULE_DIR=$(dirname $(dirname $(dirname "$MANIFEST_FILE")))
+
+          # 2. If files were uploaded directly to root, wrap them in 'app/' directory
+          if [ "$MODULE_DIR" = "." ] || [ "$MODULE_DIR" = "./" ]; then
+            echo "Files uploaded directly to root. Creating 'app/' wrapper..."
+            mkdir -p app
+            [ -d "src" ] && mv src app/
+            [ -f "build.gradle.kts" ] && mv build.gradle.kts app/ 2>/dev/null || true
+            [ -f "build.gradle" ] && mv build.gradle app/ 2>/dev/null || true
+            MODULE_DIR="./app"
+          fi
+
+          ROOT_DIR=$(dirname "$MODULE_DIR")
           cd "$ROOT_DIR"
 
-          # Create settings.gradle.kts if missing
-          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
-            echo "Generating missing settings.gradle.kts..."
-            cat << 'EOF' > settings.gradle.kts
+          # 3. Generate root settings.gradle.kts
+          cat << 'EOF' > settings.gradle.kts
           pluginManagement {
               repositories {
                   google()
@@ -53,19 +66,52 @@ jobs:
           rootProject.name = "GameModApp"
           include(":app")
           EOF
-          fi
 
-          # Create root build.gradle.kts if missing
-          if [ ! -f "build.gradle.kts" ] && [ ! -f "build.gradle" ]; then
-            echo "Generating missing root build.gradle.kts..."
-            cat << 'EOF' > build.gradle.kts
+          # 4. Generate root build.gradle.kts
+          cat << 'EOF' > build.gradle.kts
           plugins {
               id("com.android.application") version "8.2.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.22" apply false
           }
           EOF
+
+          # 5. Generate app/build.gradle.kts if missing
+          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
+            echo "Generating app/build.gradle.kts..."
+            cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.example.gamemod"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.example.gamemod"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
+          }
+          dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+              implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.material3:material3")
+          }
+          EOF
           fi
 
+          # 6. Build the APK
           gradle assembleDebug
 
       - name: Upload APK
