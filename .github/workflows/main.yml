@@ -25,7 +25,14 @@ jobs:
           mkdir -p app/src/main/java/com/example/gamemod/adapter
           mkdir -p app/src/main/java/com/example/gamemod/engine
 
-          # 1. settings.gradle.kts
+          # 1. gradle.properties
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.nonTransitiveRclass=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          # 2. settings.gradle.kts
           cat << 'EOF' > settings.gradle.kts
           pluginManagement {
               repositories {
@@ -45,7 +52,7 @@ jobs:
           include(":app")
           EOF
 
-          # 2. build.gradle.kts (Root)
+          # 3. build.gradle.kts (Root)
           cat << 'EOF' > build.gradle.kts
           plugins {
               id("com.android.application") version "8.2.2" apply false
@@ -53,7 +60,7 @@ jobs:
           }
           EOF
 
-          # 3. app/build.gradle.kts
+          # 4. app/build.gradle.kts
           cat << 'EOF' > app/build.gradle.kts
           plugins {
               id("com.android.application")
@@ -86,7 +93,7 @@ jobs:
           }
           EOF
 
-          # 4. AndroidManifest.xml
+          # 5. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -109,14 +116,14 @@ jobs:
           </manifest>
           EOF
 
-          # 5. GameModApplication.kt
+          # 6. GameModApplication.kt
           cat << 'EOF' > app/src/main/java/com/example/gamemod/GameModApplication.kt
           package com.example.gamemod
           import android.app.Application
           class GameModApplication : Application()
           EOF
 
-          # 6. ModModels.kt
+          # 7. ModModels.kt
           cat << 'EOF' > app/src/main/java/com/example/gamemod/model/ModModels.kt
           package com.example.gamemod.model
 
@@ -139,7 +146,7 @@ jobs:
           }
           EOF
 
-          # 7. DemoGameAdapter.kt
+          # 8. DemoGameAdapter.kt
           cat << 'EOF' > app/src/main/java/com/example/gamemod/adapter/DemoGameAdapter.kt
           package com.example.gamemod.adapter
 
@@ -166,7 +173,7 @@ jobs:
           }
           EOF
 
-          # 8. ModEngine.kt
+          # 9. ModEngine.kt
           cat << 'EOF' > app/src/main/java/com/example/gamemod/engine/ModEngine.kt
           package com.example.gamemod.engine
 
@@ -178,7 +185,7 @@ jobs:
           }
           EOF
 
-          # 9. MainActivity.kt
+          # 10. MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/example/gamemod/MainActivity.kt
           package com.example.gamemod
 
@@ -255,7 +262,7 @@ jobs:
           }
           EOF
 
-          # 10. Run Gradle Build
+          # 11. Run Gradle Build
           gradle assembleDebug
 
       - name: Upload APK
