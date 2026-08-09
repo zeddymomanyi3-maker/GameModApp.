@@ -19,35 +19,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Auto-Detect, Restructure, and Build
+      - name: Generate Complete Android Project & Build
         run: |
-          # 1. Locate AndroidManifest.xml
-          MANIFEST_FILE=$(find . -name "AndroidManifest.xml" | head -n 1)
+          mkdir -p app/src/main/java/com/example/gamemod/model
+          mkdir -p app/src/main/java/com/example/gamemod/adapter
+          mkdir -p app/src/main/java/com/example/gamemod/engine
 
-          if [ -z "$MANIFEST_FILE" ]; then
-            echo "Error: No AndroidManifest.xml found in repository."
-            echo "Directory contents:"
-            find . -maxdepth 3
-            exit 1
-          fi
-
-          echo "Found AndroidManifest.xml at: $MANIFEST_FILE"
-          MODULE_DIR=$(dirname $(dirname $(dirname "$MANIFEST_FILE")))
-
-          # 2. If files were uploaded directly to root, wrap them in 'app/' directory
-          if [ "$MODULE_DIR" = "." ] || [ "$MODULE_DIR" = "./" ]; then
-            echo "Files uploaded directly to root. Creating 'app/' wrapper..."
-            mkdir -p app
-            [ -d "src" ] && mv src app/
-            [ -f "build.gradle.kts" ] && mv build.gradle.kts app/ 2>/dev/null || true
-            [ -f "build.gradle" ] && mv build.gradle app/ 2>/dev/null || true
-            MODULE_DIR="./app"
-          fi
-
-          ROOT_DIR=$(dirname "$MODULE_DIR")
-          cd "$ROOT_DIR"
-
-          # 3. Generate root settings.gradle.kts
+          # 1. settings.gradle.kts
           cat << 'EOF' > settings.gradle.kts
           pluginManagement {
               repositories {
@@ -67,7 +45,7 @@ jobs:
           include(":app")
           EOF
 
-          # 4. Generate root build.gradle.kts
+          # 2. build.gradle.kts (Root)
           cat << 'EOF' > build.gradle.kts
           plugins {
               id("com.android.application") version "8.2.2" apply false
@@ -75,10 +53,8 @@ jobs:
           }
           EOF
 
-          # 5. Generate app/build.gradle.kts if missing
-          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
-            echo "Generating app/build.gradle.kts..."
-            cat << 'EOF' > app/build.gradle.kts
+          # 3. app/build.gradle.kts
+          cat << 'EOF' > app/build.gradle.kts
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
@@ -109,13 +85,181 @@ jobs:
               implementation("androidx.compose.material3:material3")
           }
           EOF
-          fi
 
-          # 6. Build the APK
+          # 4. AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:name=".GameModApplication"
+                  android:label="Game Mod Manager"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 5. GameModApplication.kt
+          cat << 'EOF' > app/src/main/java/com/example/gamemod/GameModApplication.kt
+          package com.example.gamemod
+          import android.app.Application
+          class GameModApplication : Application()
+          EOF
+
+          # 6. ModModels.kt
+          cat << 'EOF' > app/src/main/java/com/example/gamemod/model/ModModels.kt
+          package com.example.gamemod.model
+
+          data class ModInfo(
+              val id: String,
+              val name: String,
+              val version: String,
+              val description: String,
+              val isEnabled: Boolean = false
+          )
+
+          sealed class ValidationResult {
+              object Success : ValidationResult()
+          }
+
+          interface GameAdapter {
+              fun validate(): ValidationResult
+              fun getAvailableMods(): List<ModInfo>
+              fun toggleMod(id: String, enable: Boolean): Boolean
+          }
+          EOF
+
+          # 7. DemoGameAdapter.kt
+          cat << 'EOF' > app/src/main/java/com/example/gamemod/adapter/DemoGameAdapter.kt
+          package com.example.gamemod.adapter
+
+          import com.example.gamemod.model.*
+
+          class DemoGameAdapter : GameAdapter {
+              private val mods = mutableListOf(
+                  ModInfo("1", "HD Textures Pack", "1.2.0", "Replaces standard textures with 4K resolution graphics."),
+                  ModInfo("2", "Unlimited Gold", "1.0.0", "Gives 999k starting gold."),
+                  ModInfo("3", "Custom UI Overlay", "0.9.5", "Adds enhanced HUD telemetry and FPS counter.")
+              )
+
+              override fun validate(): ValidationResult = ValidationResult.Success
+
+              override fun getAvailableMods(): List<ModInfo> = mods.toList()
+
+              override fun toggleMod(id: String, enable: Boolean): Boolean {
+                  val idx = mods.indexOfFirst { it.id == id }
+                  return if (idx != -1) {
+                      mods[idx] = mods[idx].copy(isEnabled = enable)
+                      true
+                  } else false
+              }
+          }
+          EOF
+
+          # 8. ModEngine.kt
+          cat << 'EOF' > app/src/main/java/com/example/gamemod/engine/ModEngine.kt
+          package com.example.gamemod.engine
+
+          import com.example.gamemod.model.*
+
+          class ModEngine(private val adapter: GameAdapter) {
+              fun getMods(): List<ModInfo> = adapter.getAvailableMods()
+              fun toggleMod(id: String, enable: Boolean) = adapter.toggleMod(id, enable)
+          }
+          EOF
+
+          # 9. MainActivity.kt
+          cat << 'EOF' > app/src/main/java/com/example/gamemod/MainActivity.kt
+          package com.example.gamemod
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.unit.dp
+          import com.example.gamemod.adapter.DemoGameAdapter
+          import com.example.gamemod.engine.ModEngine
+          import com.example.gamemod.model.ModInfo
+
+          class MainActivity : ComponentActivity() {
+              private val engine = ModEngine(DemoGameAdapter())
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      MaterialTheme {
+                          Surface(modifier = Modifier.fillMaxSize()) {
+                              ModScreen(engine)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun ModScreen(engine: ModEngine) {
+              var modList by remember { mutableStateOf(engine.getMods()) }
+
+              Scaffold(
+                  topBar = { TopAppBar(title = { Text("Game Mod Manager") }) }
+              ) { padding ->
+                  LazyColumn(
+                      modifier = Modifier
+                          .padding(padding)
+                          .padding(16.dp),
+                      verticalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                      items(modList, key = { it.id }) { mod ->
+                          Card(modifier = Modifier.fillMaxWidth()) {
+                              Row(
+                                  modifier = Modifier
+                                      .padding(16.dp)
+                                      .fillMaxWidth(),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.SpaceBetween
+                              ) {
+                                  Column(modifier = Modifier.weight(1f)) {
+                                      Text(text = mod.name, style = MaterialTheme.typography.titleMedium)
+                                      Text(text = "v${mod.version}", style = MaterialTheme.typography.bodySmall)
+                                      Text(text = mod.description, style = MaterialTheme.typography.bodyMedium)
+                                  }
+                                  Switch(
+                                      checked = mod.isEnabled,
+                                      onCheckedChange = { enabled ->
+                                          engine.toggleMod(mod.id, enabled)
+                                          modList = engine.getMods()
+                                      }
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # 10. Run Gradle Build
           gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: app/build/outputs/apk/debug/app-debug.apk
